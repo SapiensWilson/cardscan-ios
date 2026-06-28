@@ -1,12 +1,9 @@
 import SwiftUI
 
-/// Slide-up sheet showing all previous scans.
-/// Triggered by the history toolbar button in RootView.
 struct HistoryDrawer: View {
     @EnvironmentObject private var historyStore: HistoryStore
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
-
     @State private var showClearConfirm = false
 
     var body: some View {
@@ -22,15 +19,23 @@ struct HistoryDrawer: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
-                        .font(.csSM)
-                        .foregroundStyle(Color.csTextMuted)
+                    Button("Close") {
+                        Haptics.light()
+                        dismiss()
+                    }
+                    .font(.csSM)
+                    .foregroundStyle(Color.csTextMuted)
+                    .accessibilityLabel("Close history")
                 }
                 if !historyStore.entries.isEmpty {
                     ToolbarItem(placement: .destructiveAction) {
-                        Button("Clear All") { showClearConfirm = true }
-                            .font(.csSM)
-                            .foregroundStyle(.red)
+                        Button("Clear All") {
+                            showClearConfirm = true
+                        }
+                        .font(.csSM)
+                        .foregroundStyle(.red)
+                        .accessibilityLabel("Clear all scan history")
+                        .accessibilityHint("Permanently deletes all \(historyStore.entries.count) saved scans")
                     }
                 }
             }
@@ -39,7 +44,10 @@ struct HistoryDrawer: View {
                 isPresented: $showClearConfirm,
                 titleVisibility: .visible
             ) {
-                Button("Clear All", role: .destructive) { historyStore.clearAll() }
+                Button("Clear All", role: .destructive) {
+                    Haptics.heavy()
+                    historyStore.clearAll()
+                }
                 Button("Cancel", role: .cancel) {}
             }
         }
@@ -53,8 +61,11 @@ struct HistoryDrawer: View {
                 HistoryRow(entry: entry)
                     .listRowBackground(Color.csSurface)
                     .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                    .accessibilityLabel(rowAccessibilityLabel(entry))
+                    .accessibilityHint("Swipe left to delete. Swipe right to export.")
                     .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                         Button(role: .destructive) {
+                            Haptics.medium()
                             withAnimation { historyStore.remove(id: entry.id) }
                         } label: {
                             Label("Delete", systemImage: "trash")
@@ -77,6 +88,7 @@ struct HistoryDrawer: View {
                             Label("Share .vcf", systemImage: "square.and.arrow.up")
                         }
                         Button(role: .destructive) {
+                            Haptics.medium()
                             historyStore.remove(id: entry.id)
                         } label: {
                             Label("Delete", systemImage: "trash")
@@ -96,6 +108,7 @@ struct HistoryDrawer: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(Color.csTextFaint)
+                .accessibilityHidden(true)
             Text("No scans yet")
                 .font(.csBaseSB)
                 .foregroundStyle(Color.csText)
@@ -106,9 +119,22 @@ struct HistoryDrawer: View {
             Spacer()
         }
         .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("No scan history yet. Export a contact to save it here.")
     }
 
     // MARK: — Helpers
+    private func rowAccessibilityLabel(_ entry: HistoryEntry) -> String {
+        var parts: [String] = []
+        if !entry.fields.name.isEmpty    { parts.append(entry.fields.name) }
+        if !entry.fields.company.isEmpty { parts.append(entry.fields.company) }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        parts.append("Scanned \(formatter.string(from: entry.scannedAt))")
+        return parts.joined(separator: ", ")
+    }
+
     private func vcfURL(for entry: HistoryEntry) -> URL {
         let data = VCardBuilder.build(from: entry.fields) ?? Data()
         let url  = FileManager.default.temporaryDirectory
@@ -125,9 +151,6 @@ struct HistoryDrawer: View {
             var f = ContactFields()
             f.name = "Jane Smith"; f.company = "Acme Corp"; f.email = "jane@acme.com"
             store.add(fields: f, thumbnail: nil)
-            var g = ContactFields()
-            g.name = "Bob Jones"; g.company = "Globex"; g.phone = "+1 555 999 0000"
-            store.add(fields: g, thumbnail: nil)
             return store
         }())
         .environmentObject(AppState())

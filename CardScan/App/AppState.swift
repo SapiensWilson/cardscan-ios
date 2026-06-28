@@ -1,7 +1,6 @@
 import SwiftUI
 import Combine
 
-/// Shared application state threaded via @EnvironmentObject.
 final class AppState: ObservableObject {
 
     // MARK: — Flow
@@ -9,22 +8,21 @@ final class AppState: ObservableObject {
     @Published var step: Step = .capture
 
     // MARK: — Scan data
-    /// The image selected/captured by the user (original, full-res).
-    @Published var capturedImage: UIImage? = nil
-    /// Pre-processed image shown in Review.
+    @Published var capturedImage: UIImage?  = nil
     @Published var processedImage: UIImage? = nil
-    /// Raw OCR output string.
-    @Published var rawOCRText: String = ""
-    /// Parsed contact fields.
-    @Published var contact: ContactFields = ContactFields()
+    @Published var rawOCRText: String       = ""
+    @Published var contact: ContactFields   = ContactFields()
 
-    // MARK: — UI state
-    @Published var isProcessing: Bool = false
+    // MARK: — Processing state
+    @Published var isProcessing: Bool      = false
     @Published var processingStatus: String = "Running OCR on your card…"
     @Published var processingProgress: Double = 0
 
     // MARK: — Toast
     @Published var toastMessage: String? = nil
+
+    // MARK: — Alert
+    @Published var activeAlert: AppAlert? = nil
 
     func showToast(_ message: String) {
         toastMessage = message
@@ -33,14 +31,18 @@ final class AppState: ObservableObject {
         }
     }
 
+    func showAlert(_ alert: AppAlert) {
+        activeAlert = alert
+    }
+
     // MARK: — Reset
     func reset() {
-        capturedImage = nil
-        processedImage = nil
-        rawOCRText = ""
-        contact = ContactFields()
-        isProcessing = false
+        capturedImage     = nil
+        processedImage    = nil
+        rawOCRText        = ""
+        contact           = ContactFields()
+        isProcessing      = false
         processingProgress = 0
-        step = .capture
+        step              = .capture
     }
 }

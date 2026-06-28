@@ -1,40 +1,83 @@
 import SwiftUI
 import AVFoundation
 
-/// Full-screen camera capture view.
-/// Presented as .fullScreenCover from CaptureView.
 struct CameraView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.dismiss) private var dismiss
 
     @StateObject private var camera = CameraController()
     @State private var flashOn = false
+    @State private var permissionDenied = false
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
 
-            // Live preview
-            CameraPreviewLayer(session: camera.session)
-                .ignoresSafeArea()
+            if permissionDenied {
+                permissionDeniedOverlay
+            } else {
+                CameraPreviewLayer(session: camera.session)
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
 
-            // Card-guide overlay
-            CardGuideOverlay()
+                CardGuideOverlay()
+                    .accessibilityHidden(true)
 
-            // Controls
-            VStack {
-                topBar
-                Spacer()
-                bottomBar
+                VStack {
+                    topBar
+                    Spacer()
+                    bottomBar
+                }
+                .padding(.vertical, Spacing.s6)
             }
-            .padding(.vertical, Spacing.s6)
         }
-        .onAppear  { camera.start() }
+        .task { await checkPermission() }
         .onDisappear { camera.stop() }
         .onChange(of: camera.capturedImage) { _, img in
             guard let img else { return }
             appState.capturedImage = img
             dismiss()
+        }
+    }
+
+    // MARK: — Permission check
+    private func checkPermission() async {
+        switch CameraPermission.check() {
+        case .granted:
+            camera.start()
+        case .requesting:
+            let granted = await CameraPermission.request()
+            if granted { camera.start() } else { permissionDenied = true }
+        case .denied, .restricted:
+            permissionDenied = true
+        }
+    }
+
+    // MARK: — Permission denied overlay
+    private var permissionDeniedOverlay: some View {
+        VStack(spacing: Spacing.s6) {
+            Spacer()
+            Image(systemName: "camera.slash")
+                .font(.system(size: 48, weight: .light))
+                .foregroundStyle(.white.opacity(0.6))
+                .accessibilityHidden(true)
+            Text("Camera Access Required")
+                .font(.csBaseSB)
+                .foregroundStyle(.white)
+            Text("Please enable Camera access in Settings to scan business cards.")
+                .font(.csSM)
+                .foregroundStyle(.white.opacity(0.7))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, Spacing.s8)
+            Button("Open Settings") {
+                CameraPermission.openSettings()
+            }
+            .buttonStyle(.csPrimary)
+            Button("Cancel") { dismiss() }
+                .font(.csSM)
+                .foregroundStyle(.white.opacity(0.6))
+                .padding(.top, Spacing.s2)
+            Spacer()
         }
     }
 
@@ -49,11 +92,15 @@ struct CameraView: View {
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
             }
+            .accessibilityLabel("Close camera")
+
             Spacer()
+
             if camera.hasTorch {
                 Button {
                     flashOn.toggle()
                     camera.setTorch(flashOn)
+                    Haptics.light()
                 } label: {
                     Image(systemName: flashOn ? "bolt.fill" : "bolt.slash")
                         .font(.system(size: 17, weight: .semibold))
@@ -62,6 +109,8 @@ struct CameraView: View {
                         .background(.ultraThinMaterial)
                         .clipShape(Circle())
                 }
+                .accessibilityLabel(flashOn ? "Torch on" : "Torch off")
+                .accessibilityHint("Double tap to toggle torch")
             }
         }
         .padding(.horizontal, Spacing.s5)
@@ -70,9 +119,9 @@ struct CameraView: View {
     // MARK: — Bottom bar
     private var bottomBar: some View {
         HStack(spacing: Spacing.s10) {
-            // Flip camera
             Button {
                 camera.flipCamera()
+                Haptics.light()
             } label: {
                 Image(systemName: "arrow.triangle.2.circlepath.camera")
                     .font(.system(size: 22))
@@ -81,23 +130,23 @@ struct CameraView: View {
                     .background(.ultraThinMaterial)
                     .clipShape(Circle())
             }
+            .accessibilityLabel("Flip camera")
 
-            // Shutter
             Button {
                 camera.capturePhoto()
+                Haptics.medium()
             } label: {
                 ZStack {
-                    Circle()
-                        .fill(.white)
-                        .frame(width: 72, height: 72)
-                    Circle()
-                        .strokeBorder(.white.opacity(0.4), lineWidth: 3)
+                    Circle().fill(.white).frame(width: 72, height: 72)
+                    Circle().strokeBorder(.white.opacity(0.4), lineWidth: 3)
                         .frame(width: 84, height: 84)
                 }
             }
+            .accessibilityLabel("Capture photo")
+            .accessibilityHint("Takes a photo of the business card")
 
-            // Spacer placeholder to balance layout
             Color.clear.frame(width: 50, height: 50)
+                .accessibilityHidden(true)
         }
     }
 }
@@ -107,12 +156,8 @@ private struct CardGuideOverlay: View {
     var body: some View {
         GeometryReader { geo in
             let w = geo.size.width * 0.85
-            let h = w * 0.58   // standard business card aspect ratio 3.5:2
-            let x = (geo.size.width  - w) / 2
-            let y = (geo.size.height - h) / 2
-
+            let h = w * 0.58
             ZStack {
-                // Dimmed surround
                 Rectangle()
                     .fill(.black.opacity(0.45))
                     .mask {
@@ -124,14 +169,10 @@ private struct CardGuideOverlay: View {
                             }
                     }
                     .ignoresSafeArea()
-
-                // Guide border
                 RoundedRectangle(cornerRadius: Radius.lg)
                     .strokeBorder(.white.opacity(0.7), lineWidth: 1.5)
                     .frame(width: w, height: h)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
-
-                // Corner accents
                 CornerAccents(width: w, height: h)
                     .position(x: geo.size.width / 2, y: geo.size.height / 2)
             }
@@ -142,26 +183,17 @@ private struct CardGuideOverlay: View {
 private struct CornerAccents: View {
     let width: CGFloat
     let height: CGFloat
-    private let len: CGFloat = 22
+    private let len: CGFloat   = 22
     private let thick: CGFloat = 3
-
     var body: some View {
         ZStack {
-            // Top-left
-            corner(xSign: -1, ySign: -1)
-            // Top-right
-            corner(xSign:  1, ySign: -1)
-            // Bottom-left
-            corner(xSign: -1, ySign:  1)
-            // Bottom-right
-            corner(xSign:  1, ySign:  1)
+            corner(xSign: -1, ySign: -1); corner(xSign:  1, ySign: -1)
+            corner(xSign: -1, ySign:  1); corner(xSign:  1, ySign:  1)
         }
     }
-
     @ViewBuilder
     private func corner(xSign: CGFloat, ySign: CGFloat) -> some View {
-        let x = xSign * (width  / 2)
-        let y = ySign * (height / 2)
+        let x = xSign * (width / 2); let y = ySign * (height / 2)
         Path { p in
             p.move(to:    CGPoint(x: x, y: y - ySign * len))
             p.addLine(to: CGPoint(x: x, y: y))
@@ -171,19 +203,15 @@ private struct CornerAccents: View {
     }
 }
 
-// MARK: — SwiftUI wrapper for AVCaptureVideoPreviewLayer
 struct CameraPreviewLayer: UIViewRepresentable {
     let session: AVCaptureSession
-
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
-        view.previewLayer.session = session
+        view.previewLayer.session      = session
         view.previewLayer.videoGravity = .resizeAspectFill
         return view
     }
-
     func updateUIView(_ uiView: PreviewUIView, context: Context) {}
-
     class PreviewUIView: UIView {
         override class var layerClass: AnyClass { AVCaptureVideoPreviewLayer.self }
         var previewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }

@@ -1,7 +1,6 @@
 import SwiftUI
 import Contacts
 
-/// Step 3 — Export screen. Saves to history on any successful export action.
 struct ExportView: View {
     @EnvironmentObject private var appState: AppState
     @EnvironmentObject private var historyStore: HistoryStore
@@ -17,6 +16,7 @@ struct ExportView: View {
                     .padding(.top, Spacing.s4)
 
                 VCardPreviewCard(fields: appState.contact)
+                    .accessibilityLabel("Contact card for \(appState.contact.name.isEmpty ? "unnamed contact" : appState.contact.name)")
 
                 exportActionsCard
                 bottomButtons
@@ -50,8 +50,10 @@ struct ExportView: View {
                         HStack {
                             if isSavingContact {
                                 ProgressView().tint(.white).scaleEffect(0.8)
+                                    .accessibilityLabel("Saving")
                             } else {
                                 Image(systemName: "person.crop.circle.badge.plus")
+                                    .accessibilityHidden(true)
                             }
                             Text(isSavingContact ? "Saving…" : "Save to Contacts")
                         }
@@ -59,6 +61,8 @@ struct ExportView: View {
                     }
                     .buttonStyle(.csPrimary)
                     .disabled(isSavingContact)
+                    .accessibilityLabel("Save to Contacts")
+                    .accessibilityHint("Adds this contact directly to your iOS address book")
 
                     // Share .vcf
                     if let url = vcfURL {
@@ -67,14 +71,17 @@ struct ExportView: View {
                             preview: SharePreview(appState.contact.name.isEmpty ? "contact.vcf" : VCardBuilder.filename(for: appState.contact))
                         ) {
                             HStack {
-                                Image(systemName: "arrow.down.doc")
+                                Image(systemName: "arrow.down.doc").accessibilityHidden(true)
                                 Text("Share / Download .vcf")
                             }
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.csSecondary)
+                        .accessibilityLabel("Share vCard file")
+                        .accessibilityHint("Opens the share sheet to send or save the .vcf file")
                         .simultaneousGesture(TapGesture().onEnded {
                             recordHistory()
+                            Haptics.success()
                             appState.showToast("vCard exported — saved to history ✓")
                         })
                     }
@@ -84,18 +91,21 @@ struct ExportView: View {
                         copyAsText()
                     } label: {
                         HStack {
-                            Image(systemName: "doc.on.doc")
+                            Image(systemName: "doc.on.doc").accessibilityHidden(true)
                             Text("Copy as Text")
                         }
                         .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.csSecondary)
+                    .accessibilityLabel("Copy contact as plain text")
+                    .accessibilityHint("Copies all contact fields to the clipboard")
 
                     // Tip
                     HStack(alignment: .top, spacing: Spacing.s2) {
                         Image(systemName: "info.circle")
                             .font(.system(size: 13))
                             .foregroundStyle(Color.csGreen)
+                            .accessibilityHidden(true)
                         Text("\"Save to Contacts\" adds directly to your address book. Use \"Share .vcf\" to send to another device or app.")
                             .font(.csXS)
                             .foregroundStyle(Color.csTextMuted)
@@ -107,6 +117,7 @@ struct ExportView: View {
                         RoundedRectangle(cornerRadius: Radius.md)
                             .strokeBorder(Color.csDivider, lineWidth: 1)
                     }
+                    .accessibilityElement(children: .combine)
                 }
                 .padding(Spacing.s5)
             }
@@ -115,20 +126,28 @@ struct ExportView: View {
 
     private var bottomButtons: some View {
         HStack(spacing: Spacing.s3) {
-            Button { appState.step = .review } label: {
+            Button {
+                Haptics.light()
+                appState.step = .review
+            } label: {
                 Label("Edit Fields", systemImage: "chevron.left")
             }
             .buttonStyle(.csGhost)
+            .accessibilityLabel("Back to edit fields")
 
-            Button { appState.reset() } label: {
+            Button {
+                Haptics.light()
+                appState.reset()
+            } label: {
                 Label("Scan Another", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.csGhost)
+            .accessibilityLabel("Scan another card")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: — Actions
+    // MARK: — Helpers
     private func prepareVCF() {
         guard let data = VCardBuilder.build(from: appState.contact) else { return }
         let url = FileManager.default.temporaryDirectory
@@ -146,11 +165,14 @@ struct ExportView: View {
                 switch result {
                 case .saved:
                     recordHistory()
+                    Haptics.success()
                     appState.showToast("Saved to Contacts — added to history ✓")
                 case .permissionDenied:
-                    appState.showToast("Contacts permission denied")
+                    Haptics.error()
+                    appState.showAlert(.contactsPermissionDenied())
                 case .failed(let err):
-                    appState.showToast("Save failed: \(err.localizedDescription)")
+                    Haptics.error()
+                    appState.showAlert(.saveFailed(err.localizedDescription))
                 }
             }
         }
@@ -159,10 +181,10 @@ struct ExportView: View {
     private func copyAsText() {
         UIPasteboard.general.string = appState.contact.plainText
         recordHistory()
+        Haptics.success()
         appState.showToast("Copied to clipboard — saved to history ✓")
     }
 
-    /// Adds to history once per export session.
     private func recordHistory() {
         guard !savedToHistory else { return }
         savedToHistory = true
