@@ -1,15 +1,31 @@
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var appState: AppState
-    @EnvironmentObject private var historyStore: HistoryStore
-    @State private var showHistory = false
+    @EnvironmentObject private var appState:      AppState
+    @EnvironmentObject private var historyStore:  HistoryStore
+    @EnvironmentObject private var settings:      SettingsStore
+    @State private var showHistory  = false
+    @State private var showSettings = false
 
     var body: some View {
         NavigationStack {
             CaptureView()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    // Leading — settings gear
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            Haptics.light()
+                            showSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                                .font(.system(size: 18))
+                                .foregroundStyle(Color.csTextMuted)
+                        }
+                        .accessibilityLabel("Settings")
+                    }
+
+                    // Centre — wordmark
                     ToolbarItem(placement: .principal) {
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: Radius.md)
@@ -27,6 +43,8 @@ struct RootView: View {
                         }
                         .accessibilityLabel("CardScan")
                     }
+
+                    // Trailing — history clock + badge
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             Haptics.light()
@@ -56,12 +74,22 @@ struct RootView: View {
                 }
         }
         .tint(Color.csGreen)
+        // Respect the user's appearance preference
+        .preferredColorScheme(settings.appearanceMode.colorScheme)
+        // Sheets
         .sheet(isPresented: $showHistory) {
             HistoryDrawer()
                 .environmentObject(historyStore)
                 .environmentObject(appState)
         }
-        // Centralised alert — drives all error/permission dialogs app-wide
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+                .environmentObject(settings)
+                .environmentObject(historyStore)
+                .environmentObject(appState)
+                .preferredColorScheme(settings.appearanceMode.colorScheme)
+        }
+        // Centralised app-wide alert
         .alert(item: $appState.activeAlert) { alert in
             if alert.showSettingsButton {
                 return Alert(
@@ -87,4 +115,5 @@ struct RootView: View {
     RootView()
         .environmentObject(AppState())
         .environmentObject(HistoryStore())
+        .environmentObject(SettingsStore())
 }
