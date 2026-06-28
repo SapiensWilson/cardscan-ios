@@ -1,14 +1,14 @@
 import SwiftUI
 import Contacts
 
-/// Step 3 — Export screen.
-/// Mirrors the web app's panel-export.
+/// Step 3 — Export screen. Saves to history on any successful export action.
 struct ExportView: View {
     @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var historyStore: HistoryStore
 
-    /// Temp file URL for ShareLink VCF export.
     @State private var vcfURL: URL? = nil
     @State private var isSavingContact = false
+    @State private var savedToHistory  = false
 
     var body: some View {
         ScrollView {
@@ -16,13 +16,9 @@ struct ExportView: View {
                 StepIndicator(current: .export)
                     .padding(.top, Spacing.s4)
 
-                // vCard preview card (teal gradient)
                 VCardPreviewCard(fields: appState.contact)
 
-                // Export actions card
                 exportActionsCard
-
-                // Bottom buttons
                 bottomButtons
             }
             .padding(.horizontal, Spacing.s6)
@@ -39,17 +35,15 @@ struct ExportView: View {
             VStack(spacing: 0) {
                 HStack {
                     Text("Export Contact")
-                        .font(.csBaseSB)
-                        .foregroundStyle(Color.csText)
+                        .font(.csBaseSB).foregroundStyle(Color.csText)
                     Spacer()
                 }
-                .padding(Spacing.s5)
-                .padding(.horizontal, Spacing.s1)
+                .padding(Spacing.s5).padding(.horizontal, Spacing.s1)
 
                 Divider().background(Color.csDivider)
 
                 VStack(spacing: Spacing.s4) {
-                    // Save to Contacts (native)
+                    // Save to Contacts
                     Button {
                         saveToContacts()
                     } label: {
@@ -66,9 +60,12 @@ struct ExportView: View {
                     .buttonStyle(.csPrimary)
                     .disabled(isSavingContact)
 
-                    // Download .vcf via ShareSheet
+                    // Share .vcf
                     if let url = vcfURL {
-                        ShareLink(item: url, preview: SharePreview(appState.contact.name.isEmpty ? "contact.vcf" : VCardBuilder.filename(for: appState.contact))) {
+                        ShareLink(
+                            item: url,
+                            preview: SharePreview(appState.contact.name.isEmpty ? "contact.vcf" : VCardBuilder.filename(for: appState.contact))
+                        ) {
                             HStack {
                                 Image(systemName: "arrow.down.doc")
                                 Text("Share / Download .vcf")
@@ -76,9 +73,13 @@ struct ExportView: View {
                             .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.csSecondary)
+                        .simultaneousGesture(TapGesture().onEnded {
+                            recordHistory()
+                            appState.showToast("vCard exported — saved to history ✓")
+                        })
                     }
 
-                    // Copy as plain text
+                    // Copy as text
                     Button {
                         copyAsText()
                     } label: {
@@ -112,19 +113,14 @@ struct ExportView: View {
         }
     }
 
-    // MARK: — Bottom buttons
     private var bottomButtons: some View {
         HStack(spacing: Spacing.s3) {
-            Button {
-                appState.step = .review
-            } label: {
+            Button { appState.step = .review } label: {
                 Label("Edit Fields", systemImage: "chevron.left")
             }
             .buttonStyle(.csGhost)
 
-            Button {
-                appState.reset()
-            } label: {
+            Button { appState.reset() } label: {
                 Label("Scan Another", systemImage: "arrow.counterclockwise")
             }
             .buttonStyle(.csGhost)
@@ -149,7 +145,8 @@ struct ExportView: View {
                 isSavingContact = false
                 switch result {
                 case .saved:
-                    appState.showToast("Saved to Contacts ✓")
+                    recordHistory()
+                    appState.showToast("Saved to Contacts — added to history ✓")
                 case .permissionDenied:
                     appState.showToast("Contacts permission denied")
                 case .failed(let err):
@@ -161,23 +158,33 @@ struct ExportView: View {
 
     private func copyAsText() {
         UIPasteboard.general.string = appState.contact.plainText
-        appState.showToast("Copied to clipboard ✓")
+        recordHistory()
+        appState.showToast("Copied to clipboard — saved to history ✓")
+    }
+
+    /// Adds to history once per export session.
+    private func recordHistory() {
+        guard !savedToHistory else { return }
+        savedToHistory = true
+        historyStore.add(
+            fields:    appState.contact,
+            thumbnail: appState.processedImage ?? appState.capturedImage
+        )
     }
 }
 
 #Preview {
-    NavigationStack {
-        ExportView()
-    }
-    .environmentObject({
-        let s = AppState()
-        s.contact.name    = "Jane Smith"
-        s.contact.title   = "Director of Engineering"
-        s.contact.company = "Acme Corp"
-        s.contact.phone   = "+1 (555) 012-3456"
-        s.contact.email   = "jane@acme.com"
-        s.contact.website = "https://acme.com"
-        s.step = .export
-        return s
-    }())
+    ExportView()
+        .environmentObject({
+            let s = AppState()
+            s.contact.name    = "Jane Smith"
+            s.contact.title   = "Director of Engineering"
+            s.contact.company = "Acme Corp"
+            s.contact.phone   = "+1 (555) 012-3456"
+            s.contact.email   = "jane@acme.com"
+            s.contact.website = "https://acme.com"
+            s.step = .export
+            return s
+        }())
+        .environmentObject(HistoryStore())
 }
