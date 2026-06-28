@@ -2,18 +2,43 @@ import SwiftUI
 import PhotosUI
 
 /// Step 1 — Capture screen. Upload from library or use camera.
-/// Phase 2 will wire camera + image preprocessing here.
 struct CaptureView: View {
     @EnvironmentObject private var appState: AppState
     @State private var photoItem: PhotosPickerItem? = nil
     @State private var showCamera = false
 
     var body: some View {
+        Group {
+            switch appState.step {
+            case .capture:
+                captureContent
+            case .processing:
+                ProcessingView()
+            case .review:
+                // Phase 4 will replace this stub
+                ReviewStubView()
+            case .export:
+                // Phase 5
+                Text("Export — coming in Phase 5")
+                    .foregroundStyle(Color.csTextMuted)
+            }
+        }
+        .fullScreenCover(isPresented: $showCamera) {
+            CameraView()
+                .environmentObject(appState)
+        }
+        .onChange(of: appState.capturedImage) { _, img in
+            guard let img else { return }
+            Task { await ScanPipeline.run(image: img, appState: appState) }
+        }
+    }
+
+    // MARK: — Capture content
+    private var captureContent: some View {
         ScrollView {
             VStack(spacing: Spacing.s10) {
                 StepIndicator(current: .capture)
                     .padding(.top, Spacing.s4)
-
                 uploadZone
             }
             .padding(.horizontal, Spacing.s6)
@@ -21,14 +46,12 @@ struct CaptureView: View {
         }
         .background(Color.csBg)
         .withToast()
-        // Phase 2: .fullScreenCover(isPresented: $showCamera) { CameraView() }
     }
 
     // MARK: — Upload zone
     private var uploadZone: some View {
         CardScanCard {
             VStack(spacing: Spacing.s6) {
-                // Icon
                 RoundedRectangle(cornerRadius: Radius.lg)
                     .fill(Color.csSurfaceOffset)
                     .frame(width: 64, height: 64)
@@ -38,7 +61,6 @@ struct CaptureView: View {
                             .foregroundStyle(Color.csTextMuted)
                     }
 
-                // Headline
                 VStack(spacing: Spacing.s2) {
                     Text("Scan a Business Card")
                         .font(.csDisplay(size: 26))
@@ -50,7 +72,6 @@ struct CaptureView: View {
                         .multilineTextAlignment(.center)
                 }
 
-                // Action buttons
                 HStack(spacing: Spacing.s3) {
                     PhotosPicker(
                         selection: $photoItem,
@@ -78,7 +99,6 @@ struct CaptureView: View {
         }
     }
 
-    // MARK: — Privacy badge
     private var privacyBadge: some View {
         HStack(spacing: Spacing.s2) {
             Image(systemName: "lock.shield")
@@ -94,25 +114,42 @@ struct CaptureView: View {
         .clipShape(Capsule())
     }
 
-    // MARK: — Photo handling (stub — Phase 3 wires OCR)
     private func handlePickedPhoto(_ item: PhotosPickerItem?) {
         guard let item else { return }
         Task {
-            if let data = try? await item.loadTransferable(type: Data.self),
+            if let data  = try? await item.loadTransferable(type: Data.self),
                let image = UIImage(data: data) {
-                await MainActor.run {
-                    appState.capturedImage = image
-                    // TODO Phase 3: kick off ImagePreprocessor + OCREngine
-                    appState.showToast("Image loaded — OCR coming in Phase 3!")
-                }
+                await MainActor.run { appState.capturedImage = image }
             }
         }
     }
 }
 
-#Preview {
-    NavigationStack {
-        CaptureView()
+/// Temporary stub shown after OCR while Phase 4 (ReviewView) is built.
+private struct ReviewStubView: View {
+    @EnvironmentObject private var appState: AppState
+    var body: some View {
+        VStack(spacing: Spacing.s6) {
+            StepIndicator(current: .review).padding(.top, Spacing.s4)
+            CardScanCard {
+                VStack(alignment: .leading, spacing: Spacing.s4) {
+                    Text("OCR Complete ✔️").font(.csBaseSB)
+                    Text(appState.rawOCRText.isEmpty ? "No text detected" : appState.rawOCRText)
+                        .font(.csXS)
+                        .foregroundStyle(Color.csTextMuted)
+                    Button("Scan Another") { appState.reset() }
+                        .buttonStyle(.csGhost)
+                }
+                .padding(Spacing.s6)
+            }
+            .padding(.horizontal, Spacing.s6)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Color.csBg)
     }
-    .environmentObject(AppState())
+}
+
+#Preview {
+    NavigationStack { CaptureView() }
+        .environmentObject(AppState())
 }
