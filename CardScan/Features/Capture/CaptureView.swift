@@ -1,7 +1,8 @@
 import SwiftUI
 import PhotosUI
 
-/// Step 1 — Capture screen. Upload from library or use camera.
+/// Root flow router — switches between Capture, Processing, Review, Export
+/// based on AppState.step.
 struct CaptureView: View {
     @EnvironmentObject private var appState: AppState
     @State private var photoItem: PhotosPickerItem? = nil
@@ -15,17 +16,18 @@ struct CaptureView: View {
             case .processing:
                 ProcessingView()
             case .review:
-                // Phase 4 will replace this stub
-                ReviewStubView()
+                ReviewView()
             case .export:
                 // Phase 5
                 Text("Export — coming in Phase 5")
                     .foregroundStyle(Color.csTextMuted)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color.csBg)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: appState.step)
         .fullScreenCover(isPresented: $showCamera) {
-            CameraView()
-                .environmentObject(appState)
+            CameraView().environmentObject(appState)
         }
         .onChange(of: appState.capturedImage) { _, img in
             guard let img else { return }
@@ -37,8 +39,7 @@ struct CaptureView: View {
     private var captureContent: some View {
         ScrollView {
             VStack(spacing: Spacing.s10) {
-                StepIndicator(current: .capture)
-                    .padding(.top, Spacing.s4)
+                StepIndicator(current: .capture).padding(.top, Spacing.s4)
                 uploadZone
             }
             .padding(.horizontal, Spacing.s6)
@@ -48,7 +49,6 @@ struct CaptureView: View {
         .withToast()
     }
 
-    // MARK: — Upload zone
     private var uploadZone: some View {
         CardScanCard {
             VStack(spacing: Spacing.s6) {
@@ -85,9 +85,7 @@ struct CaptureView: View {
                         handlePickedPhoto(newItem)
                     }
 
-                    Button {
-                        showCamera = true
-                    } label: {
+                    Button { showCamera = true } label: {
                         Label("Camera", systemImage: "camera")
                     }
                     .buttonStyle(.csSecondary)
@@ -104,8 +102,7 @@ struct CaptureView: View {
             Image(systemName: "lock.shield")
                 .font(.system(size: 11, weight: .semibold))
             Text("100% on-device — nothing leaves your phone")
-                .font(.csXS)
-                .fontWeight(.semibold)
+                .font(.csXS).fontWeight(.semibold)
         }
         .foregroundStyle(Color.csSuccess)
         .padding(.vertical, Spacing.s1)
@@ -125,31 +122,6 @@ struct CaptureView: View {
     }
 }
 
-/// Temporary stub shown after OCR while Phase 4 (ReviewView) is built.
-private struct ReviewStubView: View {
-    @EnvironmentObject private var appState: AppState
-    var body: some View {
-        VStack(spacing: Spacing.s6) {
-            StepIndicator(current: .review).padding(.top, Spacing.s4)
-            CardScanCard {
-                VStack(alignment: .leading, spacing: Spacing.s4) {
-                    Text("OCR Complete ✔️").font(.csBaseSB)
-                    Text(appState.rawOCRText.isEmpty ? "No text detected" : appState.rawOCRText)
-                        .font(.csXS)
-                        .foregroundStyle(Color.csTextMuted)
-                    Button("Scan Another") { appState.reset() }
-                        .buttonStyle(.csGhost)
-                }
-                .padding(Spacing.s6)
-            }
-            .padding(.horizontal, Spacing.s6)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .background(Color.csBg)
-    }
-}
-
 #Preview {
-    NavigationStack { CaptureView() }
-        .environmentObject(AppState())
+    NavigationStack { CaptureView() }.environmentObject(AppState())
 }
