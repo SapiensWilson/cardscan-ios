@@ -1,8 +1,7 @@
 import SwiftUI
 import PhotosUI
 
-/// Root flow router — switches between Capture, Processing, Review, Export
-/// based on AppState.step.
+/// Root flow router — switches between Capture, Processing, Review, Export.
 struct CaptureView: View {
     @EnvironmentObject private var appState: AppState
     @State private var photoItem: PhotosPickerItem? = nil
@@ -11,18 +10,10 @@ struct CaptureView: View {
     var body: some View {
         Group {
             switch appState.step {
-            case .capture:
-                captureContent
-            case .processing:
-                ProcessingView()
-            case .review:
-                ReviewView()
-            case .export:
-                // Phase 5
-                Text("Export — coming in Phase 5")
-                    .foregroundStyle(Color.csTextMuted)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.csBg)
+            case .capture:    captureContent
+            case .processing: ProcessingView()
+            case .review:     ReviewView()
+            case .export:     ExportView()
             }
         }
         .animation(.easeInOut(duration: 0.25), value: appState.step)
@@ -35,7 +26,6 @@ struct CaptureView: View {
         }
     }
 
-    // MARK: — Capture content
     private var captureContent: some View {
         ScrollView {
             VStack(spacing: Spacing.s10) {
@@ -60,7 +50,6 @@ struct CaptureView: View {
                             .font(.system(size: 28, weight: .light))
                             .foregroundStyle(Color.csTextMuted)
                     }
-
                 VStack(spacing: Spacing.s2) {
                     Text("Scan a Business Card")
                         .font(.csDisplay(size: 26))
@@ -71,26 +60,18 @@ struct CaptureView: View {
                         .foregroundStyle(Color.csTextMuted)
                         .multilineTextAlignment(.center)
                 }
-
                 HStack(spacing: Spacing.s3) {
-                    PhotosPicker(
-                        selection: $photoItem,
-                        matching: .images,
-                        photoLibrary: .shared()
-                    ) {
+                    PhotosPicker(selection: $photoItem, matching: .images, photoLibrary: .shared()) {
                         Label("Upload Image", systemImage: "arrow.up.doc")
                     }
                     .buttonStyle(.csPrimary)
-                    .onChange(of: photoItem) { _, newItem in
-                        handlePickedPhoto(newItem)
-                    }
+                    .onChange(of: photoItem) { _, newItem in handlePickedPhoto(newItem) }
 
                     Button { showCamera = true } label: {
                         Label("Camera", systemImage: "camera")
                     }
                     .buttonStyle(.csSecondary)
                 }
-
                 privacyBadge
             }
             .padding(Spacing.s8)
@@ -99,14 +80,11 @@ struct CaptureView: View {
 
     private var privacyBadge: some View {
         HStack(spacing: Spacing.s2) {
-            Image(systemName: "lock.shield")
-                .font(.system(size: 11, weight: .semibold))
-            Text("100% on-device — nothing leaves your phone")
-                .font(.csXS).fontWeight(.semibold)
+            Image(systemName: "lock.shield").font(.system(size: 11, weight: .semibold))
+            Text("100% on-device — nothing leaves your phone").font(.csXS).fontWeight(.semibold)
         }
         .foregroundStyle(Color.csSuccess)
-        .padding(.vertical, Spacing.s1)
-        .padding(.horizontal, Spacing.s3)
+        .padding(.vertical, Spacing.s1).padding(.horizontal, Spacing.s3)
         .background(Color.csSuccessHighlight)
         .clipShape(Capsule())
     }
@@ -114,7 +92,7 @@ struct CaptureView: View {
     private func handlePickedPhoto(_ item: PhotosPickerItem?) {
         guard let item else { return }
         Task {
-            if let data  = try? await item.loadTransferable(type: Data.self),
+            if let data = try? await item.loadTransferable(type: Data.self),
                let image = UIImage(data: data) {
                 await MainActor.run { appState.capturedImage = image }
             }
