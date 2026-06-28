@@ -2,12 +2,15 @@ import SwiftUI
 import Contacts
 
 struct ExportView: View {
-    @EnvironmentObject private var appState: AppState
+    @EnvironmentObject private var appState:     AppState
     @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var proStore:     ProStore
 
-    @State private var vcfURL: URL? = nil
-    @State private var isSavingContact = false
-    @State private var savedToHistory  = false
+    @State private var vcfURL: URL?         = nil
+    @State private var isSavingContact      = false
+    @State private var savedToHistory       = false
+    @State private var showContactsPaywall  = false
+    @State private var showVcfPaywall       = false
 
     var body: some View {
         ScrollView {
@@ -27,6 +30,12 @@ struct ExportView: View {
         .background(Color.csBg)
         .withToast()
         .onAppear { prepareVCF() }
+        .sheet(isPresented: $showContactsPaywall) {
+            PaywallView(triggerFeature: .saveContacts).environmentObject(proStore)
+        }
+        .sheet(isPresented: $showVcfPaywall) {
+            PaywallView(triggerFeature: .exportVcf).environmentObject(proStore)
+        }
     }
 
     // MARK: — Export actions card
@@ -37,22 +46,33 @@ struct ExportView: View {
                     Text("Export Contact")
                         .font(.csBaseSB).foregroundStyle(Color.csText)
                     Spacer()
+                    if !proStore.isPro {
+                        Text("PRO")
+                            .font(.system(size: 9, weight: .bold))
+                            .tracking(0.5)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Color.csGreen)
+                            .clipShape(Capsule())
+                    }
                 }
                 .padding(Spacing.s5).padding(.horizontal, Spacing.s1)
 
                 Divider().background(Color.csDivider)
 
                 VStack(spacing: Spacing.s4) {
-                    // Save to Contacts
+                    // Save to Contacts — Pro gated
                     Button {
-                        saveToContacts()
+                        if proStore.isPro { saveToContacts() }
+                        else { Haptics.light(); showContactsPaywall = true }
                     } label: {
                         HStack {
                             if isSavingContact {
                                 ProgressView().tint(.white).scaleEffect(0.8)
                                     .accessibilityLabel("Saving")
                             } else {
-                                Image(systemName: "person.crop.circle.badge.plus")
+                                Image(systemName: proStore.isPro ? "person.crop.circle.badge.plus" : "lock.fill")
                                     .accessibilityHidden(true)
                             }
                             Text(isSavingContact ? "Saving…" : "Save to Contacts")
@@ -61,32 +81,45 @@ struct ExportView: View {
                     }
                     .buttonStyle(.csPrimary)
                     .disabled(isSavingContact)
-                    .accessibilityLabel("Save to Contacts")
-                    .accessibilityHint("Adds this contact directly to your iOS address book")
+                    .accessibilityLabel(proStore.isPro ? "Save to Contacts" : "Save to Contacts — Pro feature")
+                    .accessibilityHint(proStore.isPro ? "Adds to your iOS address book" : "Tap to unlock with CardScan Pro")
 
-                    // Share .vcf
-                    if let url = vcfURL {
-                        ShareLink(
-                            item: url,
-                            preview: SharePreview(appState.contact.name.isEmpty ? "contact.vcf" : VCardBuilder.filename(for: appState.contact))
-                        ) {
-                            HStack {
-                                Image(systemName: "arrow.down.doc").accessibilityHidden(true)
-                                Text("Share / Download .vcf")
+                    // Share .vcf — Pro gated
+                    Group {
+                        if proStore.isPro, let url = vcfURL {
+                            ShareLink(
+                                item: url,
+                                preview: SharePreview(appState.contact.name.isEmpty ? "contact.vcf" : VCardBuilder.filename(for: appState.contact))
+                            ) {
+                                HStack {
+                                    Image(systemName: "arrow.down.doc").accessibilityHidden(true)
+                                    Text("Share / Download .vcf")
+                                }
+                                .frame(maxWidth: .infinity)
                             }
-                            .frame(maxWidth: .infinity)
+                            .buttonStyle(.csSecondary)
+                            .simultaneousGesture(TapGesture().onEnded {
+                                recordHistory()
+                                Haptics.success()
+                                appState.showToast("vCard exported — saved to history ✓")
+                            })
+                        } else {
+                            Button {
+                                Haptics.light()
+                                showVcfPaywall = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "lock.fill").accessibilityHidden(true)
+                                    Text("Share / Download .vcf")
+                                }
+                                .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.csSecondary)
                         }
-                        .buttonStyle(.csSecondary)
-                        .accessibilityLabel("Share vCard file")
-                        .accessibilityHint("Opens the share sheet to send or save the .vcf file")
-                        .simultaneousGesture(TapGesture().onEnded {
-                            recordHistory()
-                            Haptics.success()
-                            appState.showToast("vCard exported — saved to history ✓")
-                        })
                     }
+                    .accessibilityLabel(proStore.isPro ? "Share vCard file" : "Share vCard — Pro feature")
 
-                    // Copy as text
+                    // Copy as text — FREE for everyone
                     Button {
                         copyAsText()
                     } label: {
@@ -98,26 +131,33 @@ struct ExportView: View {
                     }
                     .buttonStyle(.csSecondary)
                     .accessibilityLabel("Copy contact as plain text")
-                    .accessibilityHint("Copies all contact fields to the clipboard")
+                    .accessibilityHint("Free feature — copies all fields to clipboard")
 
-                    // Tip
-                    HStack(alignment: .top, spacing: Spacing.s2) {
-                        Image(systemName: "info.circle")
-                            .font(.system(size: 13))
-                            .foregroundStyle(Color.csGreen)
-                            .accessibilityHidden(true)
-                        Text("\"Save to Contacts\" adds directly to your address book. Use \"Share .vcf\" to send to another device or app.")
-                            .font(.csXS)
-                            .foregroundStyle(Color.csTextMuted)
+                    // Tip / upsell
+                    if !proStore.isPro {
+                        Button {
+                            Haptics.light()
+                            showContactsPaywall = true
+                        } label: {
+                            HStack(alignment: .top, spacing: Spacing.s2) {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 13))
+                                    .foregroundStyle(Color.csGreen)
+                                    .accessibilityHidden(true)
+                                Text("Unlock Save to Contacts and .vcf export with CardScan Pro — $9.99, one-time.")
+                                    .font(.csXS)
+                                    .foregroundStyle(Color.csTextMuted)
+                                    .multilineTextAlignment(.leading)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Color.csTextFaint)
+                            }
+                        }
+                        .padding(Spacing.s3)
+                        .background(Color.csGreenHighlight)
+                        .clipShape(RoundedRectangle(cornerRadius: Radius.md))
                     }
-                    .padding(Spacing.s3)
-                    .background(Color.csSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: Radius.md))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Radius.md)
-                            .strokeBorder(Color.csDivider, lineWidth: 1)
-                    }
-                    .accessibilityElement(children: .combine)
                 }
                 .padding(Spacing.s5)
             }
@@ -129,18 +169,14 @@ struct ExportView: View {
             Button {
                 Haptics.light()
                 appState.step = .review
-            } label: {
-                Label("Edit Fields", systemImage: "chevron.left")
-            }
+            } label: { Label("Edit Fields", systemImage: "chevron.left") }
             .buttonStyle(.csGhost)
             .accessibilityLabel("Back to edit fields")
 
             Button {
                 Haptics.light()
                 appState.reset()
-            } label: {
-                Label("Scan Another", systemImage: "arrow.counterclockwise")
-            }
+            } label: { Label("Scan Another", systemImage: "arrow.counterclockwise") }
             .buttonStyle(.csGhost)
             .accessibilityLabel("Scan another card")
         }
@@ -188,25 +224,13 @@ struct ExportView: View {
     private func recordHistory() {
         guard !savedToHistory else { return }
         savedToHistory = true
-        historyStore.add(
-            fields:    appState.contact,
-            thumbnail: appState.processedImage ?? appState.capturedImage
-        )
+        historyStore.add(fields: appState.contact, thumbnail: appState.processedImage ?? appState.capturedImage)
     }
 }
 
 #Preview {
     ExportView()
-        .environmentObject({
-            let s = AppState()
-            s.contact.name    = "Jane Smith"
-            s.contact.title   = "Director of Engineering"
-            s.contact.company = "Acme Corp"
-            s.contact.phone   = "+1 (555) 012-3456"
-            s.contact.email   = "jane@acme.com"
-            s.contact.website = "https://acme.com"
-            s.step = .export
-            return s
-        }())
+        .environmentObject({ let s = AppState(); s.contact.name = "Jane Smith"; s.step = .export; return s }())
         .environmentObject(HistoryStore())
+        .environmentObject(ProStore())
 }

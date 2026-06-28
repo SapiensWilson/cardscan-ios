@@ -1,9 +1,10 @@
 import SwiftUI
 
 struct RootView: View {
-    @EnvironmentObject private var appState:      AppState
-    @EnvironmentObject private var historyStore:  HistoryStore
-    @EnvironmentObject private var settings:      SettingsStore
+    @EnvironmentObject private var appState:     AppState
+    @EnvironmentObject private var historyStore: HistoryStore
+    @EnvironmentObject private var settings:     SettingsStore
+    @EnvironmentObject private var proStore:     ProStore
     @State private var showHistory  = false
     @State private var showSettings = false
 
@@ -12,7 +13,6 @@ struct RootView: View {
             CaptureView()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    // Leading — settings gear
                     ToolbarItem(placement: .topBarLeading) {
                         Button {
                             Haptics.light()
@@ -24,8 +24,6 @@ struct RootView: View {
                         }
                         .accessibilityLabel("Settings")
                     }
-
-                    // Centre — wordmark
                     ToolbarItem(placement: .principal) {
                         HStack(spacing: 8) {
                             RoundedRectangle(cornerRadius: Radius.md)
@@ -43,8 +41,6 @@ struct RootView: View {
                         }
                         .accessibilityLabel("CardScan")
                     }
-
-                    // Trailing — history clock + badge
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
                             Haptics.light()
@@ -69,35 +65,32 @@ struct RootView: View {
                         .accessibilityLabel("Scan history")
                         .accessibilityHint(historyStore.entries.isEmpty
                             ? "No scans yet"
-                            : "\(historyStore.entries.count) scan\(historyStore.entries.count == 1 ? "" : "s") saved. Tap to view.")
+                            : "\(historyStore.entries.count) scan\(historyStore.entries.count == 1 ? "" : "s") saved")
                     }
                 }
         }
         .tint(Color.csGreen)
-        // Respect the user's appearance preference
         .preferredColorScheme(settings.appearanceMode.colorScheme)
-        // Sheets
         .sheet(isPresented: $showHistory) {
             HistoryDrawer()
                 .environmentObject(historyStore)
                 .environmentObject(appState)
+                .environmentObject(proStore)
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
                 .environmentObject(settings)
                 .environmentObject(historyStore)
                 .environmentObject(appState)
+                .environmentObject(proStore)
                 .preferredColorScheme(settings.appearanceMode.colorScheme)
         }
-        // Centralised app-wide alert
         .alert(item: $appState.activeAlert) { alert in
             if alert.showSettingsButton {
                 return Alert(
                     title: Text(alert.title),
                     message: Text(alert.message),
-                    primaryButton: .default(Text("Open Settings")) {
-                        CameraPermission.openSettings()
-                    },
+                    primaryButton: .default(Text("Open Settings")) { CameraPermission.openSettings() },
                     secondaryButton: .cancel()
                 )
             } else {
@@ -116,4 +109,5 @@ struct RootView: View {
         .environmentObject(AppState())
         .environmentObject(HistoryStore())
         .environmentObject(SettingsStore())
+        .environmentObject(ProStore())
 }
